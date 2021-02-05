@@ -16,4 +16,5 @@
   <depend>tf</depend>
   <depend>sensor_msgs</depend>
   <depend>message_filters</depend>
+  <depend>kdl_conversions</depend>
 </package>
