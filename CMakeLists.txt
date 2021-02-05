@@ -8,10 +8,11 @@ find_package(catkin REQUIRED COMPONENTS
   tf
   sensor_msgs
   message_filters
+  kdl_conversions
 )
 
 catkin_package(
-  CATKIN_DEPENDS roscpp tf sensor_msgs message_filters
+  CATKIN_DEPENDS roscpp tf sensor_msgs message_filters kdl_conversions
 )
 
 include_directories(
