@@ -210,12 +210,19 @@ geometry_msgs::Point32 LaserPlaneMerger::findGlobalPosition(
 
 	tf::Quaternion quat_range;
 	quat_range.setRPY(0.0, 0.0, angle);
-	tf::Transform tf_range(
+	tf::Transform tf_range_rot(
 		tf::Quaternion(quat_range),
+		tf::Vector3(0.0, 0.0, 0.0)
+	);
+
+	tf::Quaternion quat_tr;
+	quat_tr.setRPY(0.0, 0.0, 0.0);
+	tf::Transform tf_range(
+		tf::Quaternion(quat_tr),
 		tf::Vector3(range, 0.0, 0.0)
 	);
 
-	tf::Transform tf = tf_ref * tf_range;
+	tf::Transform tf = tf_ref * tf_range_rot * tf_range;
 
 	geometry_msgs::Point32 pos_global;
 	pos_global.x = tf.getOrigin().getX();
