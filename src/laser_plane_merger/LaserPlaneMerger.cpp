@@ -86,8 +86,8 @@ void LaserPlaneMerger::scansCallback(
 	geometry_msgs::TransformStamped transform_glob_aux_pose;
 	try {
 		transform_glob_aux_pose = tf_buffer_.lookupTransform(
-			scan_aux->header.frame_id,
-			"map",
+			"map", // scan_aux->header.frame_id,
+			scan_aux->header.frame_id, // "map",
 			ros::Time::now(),
 			ros::Duration(1.0)
 		);
@@ -98,7 +98,7 @@ void LaserPlaneMerger::scansCallback(
 
 	geometry_msgs::TransformStamped transform_glob_main_pose;
 	try {
-		transform_glob_aux_pose = tf_buffer_.lookupTransform(
+		transform_glob_main_pose = tf_buffer_.lookupTransform(
 			scan_main->header.frame_id,
 			"map",
 			ros::Time::now(),
@@ -194,7 +194,7 @@ geometry_msgs::Point32 LaserPlaneMerger::findGlobalPosition(
 	const geometry_msgs::TransformStamped &pose_ref,
 	const double &range,
 	const double &angle) {
-	// http://faculty.salina.k-state.edu/tim/robotics_sg/Pose/pointTrans2d.html#applying-transformations-to-a-point:
+	// http://faculty.salina.k-state.edu/tim/robotics_sg/Pose/pointTrans2d.html#applying-transformations-to-a-point
 	// "homogeneous transformation matrix defines rotation followed by translation in the original coordinate frame"
 	tf::Transform tf_ref(
 		tf::Quaternion(
@@ -208,6 +208,11 @@ geometry_msgs::Point32 LaserPlaneMerger::findGlobalPosition(
 			pose_ref.transform.translation.z)
 	);
 
+	auto copy_tf = pose_ref;
+	copy_tf.child_frame_id = "testtt";
+	tf_broadcaster_.sendTransform(copy_tf);
+
+	// V1
 	tf::Quaternion quat_range;
 	quat_range.setRPY(0.0, 0.0, angle);
 	tf::Transform tf_range_rot(
@@ -223,6 +228,16 @@ geometry_msgs::Point32 LaserPlaneMerger::findGlobalPosition(
 	);
 
 	tf::Transform tf = tf_ref * tf_range_rot * tf_range;
+
+//	// V2
+//	tf::Quaternion quat_tr;
+//	quat_tr.setRPY(0.0, 0.0, 0.0);
+//	tf::Transform tf_range(
+//		tf::Quaternion(quat_tr),
+//		tf::Vector3(range, 0.0, 0.0)
+//	);
+//
+//	tf::Transform tf = tf_ref * tf_range;
 
 	geometry_msgs::Point32 pos_global;
 	pos_global.x = tf.getOrigin().getX();

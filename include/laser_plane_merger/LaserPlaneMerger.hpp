@@ -19,6 +19,7 @@
 #include <geometry_msgs/Point32.h>
 #include <geometry_msgs/Pose.h>
 #include <visualization_msgs/Marker.h>
+#include <tf2_ros/transform_broadcaster.h>
 
 #include <mutex>
 
@@ -53,6 +54,7 @@ private:
 
 	tf2_ros::Buffer tf_buffer_;
 	tf2_ros::TransformListener tf_listener_;
+	tf2_ros::TransformBroadcaster tf_broadcaster_;
 
 	typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::LaserScan, sensor_msgs::LaserScan> SyncPolicy;
 	message_filters::Subscriber<sensor_msgs::LaserScan>* sub_scan_main_ptr_;
