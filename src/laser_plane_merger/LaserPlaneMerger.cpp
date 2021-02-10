@@ -92,24 +92,6 @@ void LaserPlaneMerger::scansCallback(
 		return;
 	}
 
-	sensor_msgs::LaserScan scan_merged;
-	scan_merged.header.stamp = ros::Time::now();
-	scan_merged.angle_increment = scan_aux->angle_increment;
-	scan_merged.angle_min = scan_aux->angle_min;
-	scan_merged.angle_max = scan_aux->angle_max;
-	scan_merged.range_min = scan_aux->range_min;
-	scan_merged.range_max = scan_aux->range_max;
-	scan_merged.scan_time = scan_aux->scan_time;
-	scan_merged.time_increment = scan_aux->time_increment;
-	scan_merged.intensities = scan_aux->intensities;
-
-//	// TEMP: publish rgbd scan transformed into the first scan's frame
-//	scan_merged.header.frame_id = scan_main->header.frame_id;
-//	for (const auto& range: scan_aux->ranges) {
-//		scan_merged.ranges.push_back(range);
-//	}
-//	pub_scan_.publish(scan_merged);
-
 	// vector of obstacle points global positions:
 	// - retrieved from main scan
 	auto pos_obs_main_global = computeGlobalPositions(transform_glob_main_pose, *scan_main);
@@ -327,12 +309,24 @@ void LaserPlaneMerger::scansCallback(
 	);
 
 	// final evaluation
-	// this is incremented only if the main scan was considered
-//	if (is_main_scan) {
-//		angle += scan_main->angle_increment;
-//	}
+	sensor_msgs::LaserScan scan_merged;
+	scan_merged.header.stamp = ros::Time::now();
+	scan_merged.header.frame_id = scan_main->header.frame_id;
+	scan_merged.angle_increment = scan_main->angle_increment;
+	scan_merged.angle_min = scan_main->angle_min;
+	scan_merged.angle_max = scan_main->angle_max;
+	scan_merged.range_min = scan_main->range_min;
+	scan_merged.range_max = scan_main->range_max;
+	scan_merged.scan_time = scan_main->scan_time;
+	scan_merged.time_increment = scan_main->time_increment;
+	scan_merged.intensities = scan_main->intensities;
 
-	// NOTE: ranges are ordered from angle_max to angle_min
+	for (const auto& obstacle : pos_obs_global_final) {
+		// TODO: final refinement (angle_increment matching vs distance)
+		scan_merged.ranges.push_back(obstacle->distance);
+	}
+
+	pub_scan_.publish(scan_merged);
 }
 
 // NOTE: free function
