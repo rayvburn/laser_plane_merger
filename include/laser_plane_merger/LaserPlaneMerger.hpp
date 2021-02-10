@@ -29,6 +29,17 @@ public:
 	virtual ~LaserPlaneMerger() = default;
 
 private:
+	struct ObstacleScanFrame {
+		/// position of the obstacle point in global coordinate system
+		geometry_msgs::Point32 pos;
+		/// direction of the vector connecting the `pos` with `laser origin`
+		double angle;
+		/// from scan position to obstacle point
+		double distance;
+		/// indicates that the obstacle was detected by "main_scan"
+		bool is_main;
+	};
+
 	void scansCallback(
 		const sensor_msgs::LaserScanConstPtr &scan_main,
 		const sensor_msgs::LaserScanConstPtr &scan_aux
