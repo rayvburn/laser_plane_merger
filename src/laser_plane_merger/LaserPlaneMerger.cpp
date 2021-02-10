@@ -234,10 +234,10 @@ void LaserPlaneMerger::scansCallback(
 		int distance_to_upper_neighbour = it - neighbour_main_up;
 
 		// i.e. the bottom "main" neighbour is separated from the current "scan" with an "auxiliary" one
-		if (distance_to_bottom_neighbour == 0) {
+		if (distance_to_upper_neighbour == 0) {
 			// 0 is reserved for .begin() `iterator`
 			pos_obs_global_final.push_back(&(*it));
-			printf(" 0 dist to bottom neighbour!\r\n");
+			printf("  -  0 dist to upper neighbour!\r\n");
 			continue;
 		}
 		if (distance_to_upper_neighbour == 2) {
@@ -314,7 +314,11 @@ void LaserPlaneMerger::scansCallback(
 				distance_to_bottom_neighbour
 			);
 		}
-
+		if (distance_to_bottom_neighbour == 1 || distance_to_upper_neighbour == 1) {
+			pos_obs_global_final.push_back(&(*it));
+			//printf("  -  1 dist to upper OR bottom neighbour!\r\n");
+			printf(" / SEL: %ld!", it - pos_obs_global.begin());
+		}
 
 		printf("\r\n");
 	}
