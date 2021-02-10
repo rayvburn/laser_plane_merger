@@ -52,50 +52,52 @@ public:
 	};
 
 private:
+
 	void scansCallback(
 		const sensor_msgs::LaserScanConstPtr &scan_main,
 		const sensor_msgs::LaserScanConstPtr &scan_aux
 	);
+
 	std::vector<geometry_msgs::Point32> computeGlobalPositions(
 		const geometry_msgs::TransformStamped &pose_ref,
 		const sensor_msgs::LaserScan &scan
 	);
+
 	geometry_msgs::Point32 findGlobalPosition(
 		const geometry_msgs::TransformStamped &pose_ref,
 		const double &range,
 		const double &angle
 	);
-	double findScanRange(
-		const geometry_msgs::TransformStamped &pose_ref,
-		geometry_msgs::Point32 &pos_obs,
-		const double &angle
-	);
+
 	unsigned int findAngleIndex(
 		const double &angle,
 		const double &angle_min,
 		const double &angle_max,
 		const double &angle_inc
 	);
+
 	void publishGlobalPositionsVisualization(
 		const std::vector<geometry_msgs::Point32> &positions,
 		const std::string &ns,
 		const int &id
 	);
+
 	double computeEuclideanDistance(
 			const geometry_msgs::TransformStamped &pose_ref,
 			const geometry_msgs::Point32 &position
 	);
+
 	double computeAngle(
 		const geometry_msgs::TransformStamped &pose_ref,
 		const geometry_msgs::Point32 &position
 	);
+
 	ObstacleScanFrame* chooseClosest(ObstacleScanFrame* main, ObstacleScanFrame* aux);
 
 	ros::NodeHandle nh_;
 
 	tf2_ros::Buffer tf_buffer_;
 	tf2_ros::TransformListener tf_listener_;
-	tf2_ros::TransformBroadcaster tf_broadcaster_;
 
 	typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::LaserScan, sensor_msgs::LaserScan> SyncPolicy;
 	message_filters::Subscriber<sensor_msgs::LaserScan>* sub_scan_main_ptr_;
