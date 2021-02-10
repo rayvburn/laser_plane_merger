@@ -10,6 +10,9 @@
 #include <algorithm>
 #include <tf/tf.h>
 
+// NOTE: free function used for sorting
+bool sortbysec (const std::pair<geometry_msgs::Point32, double> &a, const std::pair<geometry_msgs::Point32, double> &b);
+
 LaserPlaneMerger::LaserPlaneMerger():
 	tf_listener_(tf_buffer_),
 	sub_scan_main_ptr_(nullptr),
@@ -46,48 +49,25 @@ void LaserPlaneMerger::scansCallback(
 	const sensor_msgs::LaserScanConstPtr &scan_main,
 	const sensor_msgs::LaserScanConstPtr &scan_aux
 ) {
-	visualization_msgs::Marker marker;
-	marker.pose.orientation.x = 0.0f;
-	marker.pose.orientation.y = 0.0f;
-	marker.pose.orientation.z = 0.0f;
-	marker.pose.orientation.w = 1.0f;
-
-	marker.scale.x = 0.01;
-	marker.scale.y = 0.01;
-	marker.scale.z = 0.01;
-
-	marker.header.frame_id = "map";
-	marker.header.stamp = ros::Time::now();
-
-	marker.ns = "laser_plane_merger";
-	marker.action = visualization_msgs::Marker::ADD;
-	marker.type = visualization_msgs::Marker::POINTS;
-	marker.id = 1;
-
-	marker.color.a = 1.0f;
-	marker.color.r = 1.0f;
-	marker.color.g = 0.0f;
-	marker.color.b = 0.0f;
-
 	// try to transform to another coordinate system
-	geometry_msgs::TransformStamped transform;
-	try {
-		transform = tf_buffer_.lookupTransform(
-			scan_main->header.frame_id,
-			scan_aux->header.frame_id,
-			ros::Time::now(),
-			ros::Duration(1.0)
-		);
-	} catch (tf2::TransformException &e) {
-		ROS_WARN("exception: %s", e.what());
-		return;
-	}
+//	geometry_msgs::TransformStamped transform;
+//	try {
+//		transform = tf_buffer_.lookupTransform(
+//			scan_aux->header.frame_id,
+//			scan_main->header.frame_id,
+//			ros::Time::now(),
+//			ros::Duration(1.0)
+//		);
+//	} catch (tf2::TransformException &e) {
+//		ROS_WARN("exception: %s", e.what());
+//		return;
+//	}
 
 	geometry_msgs::TransformStamped transform_glob_aux_pose;
 	try {
 		transform_glob_aux_pose = tf_buffer_.lookupTransform(
-			"map", // scan_aux->header.frame_id,
-			scan_aux->header.frame_id, // "map",
+			"map",
+			scan_aux->header.frame_id,
 			ros::Time::now(),
 			ros::Duration(1.0)
 		);
@@ -99,8 +79,8 @@ void LaserPlaneMerger::scansCallback(
 	geometry_msgs::TransformStamped transform_glob_main_pose;
 	try {
 		transform_glob_main_pose = tf_buffer_.lookupTransform(
-			scan_main->header.frame_id,
 			"map",
+			scan_main->header.frame_id,
 			ros::Time::now(),
 			ros::Duration(1.0)
 		);
@@ -119,18 +99,122 @@ void LaserPlaneMerger::scansCallback(
 	scan_merged.scan_time = scan_aux->scan_time;
 	scan_merged.time_increment = scan_aux->time_increment;
 	scan_merged.intensities = scan_aux->intensities;
-	// TEMP: publish rgbd scan transformed into the first scan's frame
-	scan_merged.header.frame_id = scan_main->header.frame_id;
-	for (const auto& range: scan_aux->ranges) {
-		scan_merged.ranges.push_back(range);
+
+//	// TEMP: publish rgbd scan transformed into the first scan's frame
+//	scan_merged.header.frame_id = scan_main->header.frame_id;
+//	for (const auto& range: scan_aux->ranges) {
+//		scan_merged.ranges.push_back(range);
+//	}
+//	pub_scan_.publish(scan_merged);
+
+	// vector of obstacle points global positions:
+	// - retrieved from main scan
+	auto pos_obs_main_global = computeGlobalPositions(transform_glob_main_pose, *scan_main);
+	// - retrieved from auxiliary scan
+	auto pos_obs_aux_global = computeGlobalPositions(transform_glob_aux_pose, *scan_aux);
+
+	// find height of resultant scan
+	double height = 0.0;
+	if (!pos_obs_main_global.empty()) {
+		for (const auto &pos: pos_obs_main_global) {
+			// find a valid value
+			if (std::isinf(pos.x) || std::isinf(pos.y) || std::isinf(pos.z)) {
+				continue;
+			}
+			height = pos.z;
+			break;
+		}
+	}
+	// set equal height of scans
+	int same_height_occurences = 0;
+	for (auto& pos : pos_obs_aux_global) {
+		if (pos.z == height) {
+			if (same_height_occurences++ >= 5) {
+				// abort as it seems to be unnecessary
+				ROS_INFO_ONCE("Aborting height equalization. Height is: %4.5f (this is printed only once)", height);
+				break;
+			}
+			continue;
+		}
+		pos.z = height;
 	}
 
-	float angle = scan_merged.angle_min;
+	// publish
+	publishGlobalPositionsVisualization(pos_obs_main_global, "scan_main", 0);
+	publishGlobalPositionsVisualization(pos_obs_aux_global, "scan_aux", 1);
+
+	// vector of pairs, pair consists of position and double (angle of vector connecting `scan_pos` with the `pos`)
+	std::vector<std::pair<geometry_msgs::Point32, double>> pos_obs_global;
+	for (auto& pos : pos_obs_main_global) {
+		pos_obs_global.push_back(std::make_pair(pos, computeAngle(transform_glob_main_pose, pos)));
+	}
+	for (auto& pos : pos_obs_aux_global) {
+		pos_obs_global.push_back(std::make_pair(pos, computeAngle(transform_glob_main_pose, pos)));
+	}
+	// sort by vector direction angles
+	sort(pos_obs_global.begin(), pos_obs_global.end(), sortbysec);
+
+	// stores resultant vector of obstacles included in merged scan (compared to pos_obs_global, it has
+	// "doubled" obstacles erased
+	std::vector<geometry_msgs::Point32> pos_obs_global_final;
+
+	// test config
+	/*
+    double mini = -1.9186000053787231;
+    double maxi = +1.9186000053787231;
+    double inc = 0.005774015095084906;
+    cout << fmod((mini + 5*inc)-mini, inc) << endl;
+    */
+	float angle = scan_main->angle_min;
+	for (auto it = pos_obs_global.begin(); it != pos_obs_global.end(); it++) {
+		// evaluate whether obstacle in "main scan" is not detected (Inf) or further than the corresponding
+		// obstacle detected in the "auxiliary scan"
+		// NOTE: scans are matched heuristically
+
+		double rest = fmod((it->second - scan_main->angle_min), scan_main->angle_increment);
+		bool is_main_scan = rest <= 1e-05;
+		// find closest aux obstacle
+
+		printf("%d) angle: %4.5f, rest: %4.5f, is_main: %d\r\n",
+			it - pos_obs_global.begin(),
+			angle,
+			rest,
+			is_main_scan
+		);
+
+//		if (std::isinf(pos.x) || std::isinf(pos.y) || std::isinf(pos.z)) {
+//			// scan value in `main` scan seems to be OK
+//			continue;
+//		}
+		// look for a closest aux scan range
+
+		// this is incremented only if the main scan was considered
+		angle += scan_main->angle_increment;
+	}
+
+	// NOTE: ranges are ordered from angle_max to angle_min
+}
+
+// NOTE: free function
+// SOURCE: https://www.geeksforgeeks.org/sorting-vector-of-pairs-in-c-set-1-sort-by-first-and-second/
+// Driver function to sort the vector elements by second element of pairs
+bool sortbysec (
+	const std::pair<geometry_msgs::Point32, double> &a,
+	const std::pair<geometry_msgs::Point32, double> &b
+) {
+    return (a.second < b.second);
+}
+
+std::vector<geometry_msgs::Point32> LaserPlaneMerger::computeGlobalPositions(
+	const geometry_msgs::TransformStamped &pose_ref,
+	const sensor_msgs::LaserScan &scan
+) {
+	std::vector<geometry_msgs::Point32> vector;
+	float angle = scan.angle_min;
 	// vector of obstacle points global positions
-	std::vector<geometry_msgs::Point32> pos_obs_aux_global;
-	for (const auto& range: scan_aux->ranges) {
+	for (const auto& range: scan.ranges) {
 		// find obstacle position (auxiliary scan) in global coordinate system
-		pos_obs_aux_global.push_back(findGlobalPosition(transform_glob_aux_pose, range, angle));
+		vector.push_back(findGlobalPosition(pose_ref, range, angle));
 //		printf("[global position] before - position_ref: %2.5f, %2.5f, %2.5f, orientation: %2.5f, %2.5f, %2.5f, %2.5f, range: %3.6f, angle: %3.6f\r\n",
 //			transform_glob_aux_pose.transform.translation.x,
 //			transform_glob_aux_pose.transform.translation.y,
@@ -142,52 +226,10 @@ void LaserPlaneMerger::scansCallback(
 //			range,
 //			angle
 //		);
-		angle += scan_merged.angle_increment;
+		angle += scan.angle_increment;
 	}
 //	printf("\r\n");
-
-	// try to match auxiliary scan's obstacle positions to main scan's angle
-	angle = scan_main->angle_min;
-	// define a tf between scan frame and global coordinate system as KDL vector
-	KDL::Vector vector_global_cs_scan(
-		transform_glob_main_pose.transform.translation.x,
-		transform_glob_main_pose.transform.translation.y,
-		transform_glob_main_pose.transform.translation.z
-	);
-
-
-	int i = 0;
-	//while (angle <= scan_main->angle_max) {
-	for (const auto& pos: pos_obs_aux_global) {
-		if (std::isinf(pos.x) || std::isinf(pos.y) || std::isinf(pos.z)) {
-			continue;
-		}
-		geometry_msgs::Point pt;
-		pt.x = pos.x;
-		pt.y = pos.y;
-		pt.z = pos.z;
-
-		marker.points.push_back(pt);
-
-		//std::cout << i++ << ") x = " << pos.x << " y = " << pos.y << " z = " << pos.z << std::endl;
-
-		/*
-		KDL::Vector scan_to_pos(
-			pos.x - vector_global_cs_scan.x(),
-			pos.y - vector_global_cs_scan.y(),
-			pos.z - vector_global_cs_scan.z()
-		);
-		// use normalized
-		double angle = std::atan2(scan_to_pos.y(), scan_to_pos.x());
-		unsigned int idx = findAngleIndex(angle, scan_main->angle_min, scan_main->angle_max, scan_main->angle_increment);
-		std::cout << "angle: " << angle << "  index: " << idx << std::endl;
-		// angle += scan_main->angle_increment;
-		*/
-	}
-	//std::cout << "===" << std::endl;
-
-	pub_scan_.publish(scan_merged);
-	pub_marker_.publish(marker);
+	return vector;
 }
 
 geometry_msgs::Point32 LaserPlaneMerger::findGlobalPosition(
@@ -316,4 +358,83 @@ unsigned int LaserPlaneMerger::findAngleIndex(
 	double range = angle_max - angle_min;
 	unsigned int indexes = range / angle_inc;
 	return static_cast<unsigned int>((angle / range) * indexes);
+}
+
+void LaserPlaneMerger::publishGlobalPositionsVisualization(
+	const std::vector<geometry_msgs::Point32> &positions,
+	const std::string &ns,
+	const int &id
+) {
+	visualization_msgs::Marker marker;
+	marker.pose.orientation.x = 0.0f;
+	marker.pose.orientation.y = 0.0f;
+	marker.pose.orientation.z = 0.0f;
+	marker.pose.orientation.w = 1.0f;
+
+	marker.scale.x = 0.01;
+	marker.scale.y = 0.01;
+	marker.scale.z = 0.01;
+
+	marker.header.frame_id = "map";
+	marker.header.stamp = ros::Time::now();
+
+	marker.ns = ns;
+	marker.action = visualization_msgs::Marker::ADD;
+	marker.type = visualization_msgs::Marker::POINTS;
+	marker.id = id;
+
+	marker.color.a = 1.0f;
+	marker.color.r = 1.0f;
+	marker.color.g = 0.0f;
+	marker.color.b = 0.0f;
+
+	for (const auto& pos: positions) {
+		if (std::isinf(pos.x) || std::isinf(pos.y) || std::isinf(pos.z)) {
+			continue;
+		}
+		geometry_msgs::Point pt;
+		pt.x = pos.x;
+		pt.y = pos.y;
+		pt.z = pos.z;
+
+		marker.points.push_back(pt);
+	}
+
+	pub_marker_.publish(marker);
+}
+
+double LaserPlaneMerger::computeAngle(
+	const geometry_msgs::TransformStamped &pose_ref,
+	const geometry_msgs::Point32 &position
+) {
+	// Euclidean distance
+	/*
+	return std::sqrt(std::pow(position.x - pose_ref.transform.translation.x, 2)
+		+ std::pow(position.y - pose_ref.transform.translation.y, 2)
+		+ std::pow(position.z - pose_ref.transform.translation.z, 2)
+	);
+	*/
+	tf::Vector3 v(
+		position.x - pose_ref.transform.translation.x,
+		position.y - pose_ref.transform.translation.y,
+		position.z - pose_ref.transform.translation.z
+	);
+	// v.angle(tf::Vector3(1.0, 0.0, 0.0));
+	double angle = std::atan2(v.getY(), v.getX());
+	/*
+	printf("[computeAngle] pos_ref: %2.5f, %2.5f, %2.5f | pos: %2.5f, %2.5f, %2.5f | diff: %2.5f, %2.5f, %2.5f | angle: %3.6f\r\n",
+		position.x,
+		position.y,
+		position.z,
+		pose_ref.transform.translation.x,
+		pose_ref.transform.translation.y,
+		pose_ref.transform.translation.z,
+		position.x - pose_ref.transform.translation.x,
+		position.y - pose_ref.transform.translation.y,
+		position.z - pose_ref.transform.translation.z,
+		angle
+	);
+	*/
+
+	return angle;
 }
