@@ -556,10 +556,13 @@ double LaserPlaneMerger::computeAngle(
 		position.y - pose_ref.transform.translation.y,
 		position.z - pose_ref.transform.translation.z
 	);
-	// v.angle(tf::Vector3(1.0, 0.0, 0.0));
 	double angle = std::atan2(v.getY(), v.getX());
+	double angle_ref = std::atan2(pose_ref.transform.translation.y, pose_ref.transform.translation.x);
+	double angle_relative = angle - angle_ref;
+	// normalize
+	angle_relative = std::atan2(sin(angle_relative), cos(angle_relative));
 	/*
-	printf("[computeAngle] pos_ref: %2.5f, %2.5f, %2.5f | pos: %2.5f, %2.5f, %2.5f | diff: %2.5f, %2.5f, %2.5f | angle: %3.6f\r\n",
+	printf("[computeAngle] pos_ref: %2.5f, %2.5f, %2.5f | pos: %2.5f, %2.5f, %2.5f | diff: %2.5f, %2.5f, %2.5f | angle: %3.6f, ref: %3.6f, relative: %3.6f\r\n",
 		position.x,
 		position.y,
 		position.z,
@@ -569,11 +572,12 @@ double LaserPlaneMerger::computeAngle(
 		position.x - pose_ref.transform.translation.x,
 		position.y - pose_ref.transform.translation.y,
 		position.z - pose_ref.transform.translation.z,
-		angle
+		angle,
+		angle_ref,
+		angle_relative
 	);
 	*/
-
-	return angle;
+	return angle_relative;
 }
 
 LaserPlaneMerger::ObstacleScanFrame* LaserPlaneMerger::chooseClosest(
