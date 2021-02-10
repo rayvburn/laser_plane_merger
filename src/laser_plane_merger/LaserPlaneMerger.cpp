@@ -240,7 +240,7 @@ void LaserPlaneMerger::scansCallback(
 			printf("  -  0 dist to upper neighbour!\r\n");
 			continue;
 		}
-		if (distance_to_upper_neighbour == 2) {
+		if (distance_to_upper_neighbour >= 2) {
 			// TODO
 			//
 			// previous main scan and the current one are separated with an auxiliary scan -
@@ -280,7 +280,7 @@ void LaserPlaneMerger::scansCallback(
 			printf(" **REQ BOT!** ");
 			printf("D:%d", distance_to_bottom_neighbour);
 		}
-		if (distance_to_bottom_neighbour == 2) {
+		if (distance_to_bottom_neighbour >= 2) {
 			// must check, whether the auxiliary scan's angle is closer to the current instance or the next one
 			double angle_distance_current = std::fabs(it->angle - (it+1)->angle);
 			double angle_distance_neighbour = std::fabs(neighbour_main_down->angle - (it+1)->angle);
@@ -307,21 +307,24 @@ void LaserPlaneMerger::scansCallback(
 			}
 			*/
 			pos_obs_global_final.push_back(&(*it));
-			printf(" %ld! NXT", it - pos_obs_global.begin());
+			printf(" %ld! NXT\r\n", it - pos_obs_global.begin());
+			continue;
 		}
-		if (distance_to_bottom_neighbour >= 3) {
-			printf("\t\t*************STRANGE DIST TO BOTTOM NEIGHBOUR**************** %d",
-				distance_to_bottom_neighbour
-			);
-		}
+
 		if (distance_to_bottom_neighbour == 1 || distance_to_upper_neighbour == 1) {
 			pos_obs_global_final.push_back(&(*it));
 			//printf("  -  1 dist to upper OR bottom neighbour!\r\n");
-			printf(" / SEL: %ld!", it - pos_obs_global.begin());
+			printf(" / SEL: %ld!\r\n", it - pos_obs_global.begin());
+			continue;
 		}
-
-		printf("\r\n");
 	}
+
+	printf("FINAL: total %ld, main: %ld, aux: %ld  /  diff: %ld\r\n\n\n",
+		pos_obs_global_final.size(),
+		pos_obs_main_global.size(),
+		pos_obs_aux_global.size(),
+		pos_obs_main_global.size() - pos_obs_aux_global.size()
+	);
 
 	// final evaluation
 	// this is incremented only if the main scan was considered
