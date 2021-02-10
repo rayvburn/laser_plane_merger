@@ -11,7 +11,10 @@
 #include <tf/tf.h>
 
 // NOTE: free function used for sorting
-bool sortbysec (const std::pair<geometry_msgs::Point32, double> &a, const std::pair<geometry_msgs::Point32, double> &b);
+bool sortbysec (
+	const std::tuple<geometry_msgs::Point32, double, bool> &a,
+	const std::tuple<geometry_msgs::Point32, double, bool> &b
+);
 
 LaserPlaneMerger::LaserPlaneMerger():
 	tf_listener_(tf_buffer_),
@@ -143,13 +146,17 @@ void LaserPlaneMerger::scansCallback(
 	publishGlobalPositionsVisualization(pos_obs_main_global, "scan_main", 0);
 	publishGlobalPositionsVisualization(pos_obs_aux_global, "scan_aux", 1);
 
-	// vector of pairs, pair consists of position and double (angle of vector connecting `scan_pos` with the `pos`)
-	std::vector<std::pair<geometry_msgs::Point32, double>> pos_obs_global;
+	// vector of tuples, tuple consists of:
+	// - position
+	// - double (angle of vector connecting `scan_pos` (MAIN!) with the `pos`)
+	// - bool (flag indicating that the obstacle was detected in main scan)
+	std::vector<std::tuple<geometry_msgs::Point32, double, bool>> pos_obs_global;
 	for (auto& pos : pos_obs_main_global) {
-		pos_obs_global.push_back(std::make_pair(pos, computeAngle(transform_glob_main_pose, pos)));
+		pos_obs_global.push_back(std::make_tuple(pos, computeAngle(transform_glob_main_pose, pos), true));
+
 	}
 	for (auto& pos : pos_obs_aux_global) {
-		pos_obs_global.push_back(std::make_pair(pos, computeAngle(transform_glob_main_pose, pos)));
+		pos_obs_global.push_back(std::make_tuple(pos, computeAngle(transform_glob_main_pose, pos), false));
 	}
 	// sort by vector direction angles
 	sort(pos_obs_global.begin(), pos_obs_global.end(), sortbysec);
@@ -158,29 +165,63 @@ void LaserPlaneMerger::scansCallback(
 	// "doubled" obstacles erased
 	std::vector<geometry_msgs::Point32> pos_obs_global_final;
 
-	// test config
-	/*
-    double mini = -1.9186000053787231;
-    double maxi = +1.9186000053787231;
-    double inc = 0.005774015095084906;
-    cout << fmod((mini + 5*inc)-mini, inc) << endl;
-    */
 	float angle = scan_main->angle_min;
 	for (auto it = pos_obs_global.begin(); it != pos_obs_global.end(); it++) {
 		// evaluate whether obstacle in "main scan" is not detected (Inf) or further than the corresponding
 		// obstacle detected in the "auxiliary scan"
 		// NOTE: scans are matched heuristically
 
-		double rest = fmod((it->second - scan_main->angle_min), scan_main->angle_increment);
-		bool is_main_scan = rest <= 1e-05;
-		// find closest aux obstacle
+		bool is_main_scan = std::get<2>(*it);
 
-		printf("%d) angle: %4.5f, rest: %4.5f, is_main: %d\r\n",
+		printf("%ld) angle: %4.5f, is_main: %d",
 			it - pos_obs_global.begin(),
 			angle,
-			rest,
 			is_main_scan
 		);
+
+		// abort further actions if it's not a main scan
+		if (!is_main_scan) {
+			printf("\r\n");
+			continue;
+		}
+
+		// find current "main_scan"'s neighbours (that are main scan's obstacles!)
+		auto neighbour_main_up = it;
+		auto neighbour_main_down = it;
+
+		// do not perform search if this is first element of the vector
+		if (it != pos_obs_global.begin()) {
+			while (--neighbour_main_up != pos_obs_global.begin()) {
+				// evaluate whether it's obstacle detected in "main scan"
+				if (std::get<2>(*neighbour_main_up) == true) {
+					break;
+				}
+			}
+		}
+		// do not perform search if this is last element of the vector
+		if (it != pos_obs_global.end()) {
+			while (++neighbour_main_down != pos_obs_global.end()) {
+				// evaluate whether it's obstacle detected in "main scan"
+				if (std::get<2>(*neighbour_main_down) == true) {
+					break;
+				}
+			}
+		}
+
+		printf(" | neighbours - up: %ld, down: %ld",
+			//it - neighbour_main_up,
+			//neighbour_main_down - it
+			neighbour_main_up - pos_obs_global.begin(),
+			neighbour_main_down - pos_obs_global.begin()
+		);
+
+		// check, whether there is an "auxiliary scan" between the current one and the "down" (bottom)
+		// neighbour (we are looking from top to bottom)
+		int distance_to_bottom_neighbour = neighbour_main_down - it;
+		// i.e. the bottom "main" neighbour is separated from the current "scan" with an "auxiliary" one
+		if (distance_to_bottom_neighbour == 1) {
+			printf
+		}
 
 //		if (std::isinf(pos.x) || std::isinf(pos.y) || std::isinf(pos.z)) {
 //			// scan value in `main` scan seems to be OK
@@ -188,8 +229,12 @@ void LaserPlaneMerger::scansCallback(
 //		}
 		// look for a closest aux scan range
 
+		printf("\r\n");
+
 		// this is incremented only if the main scan was considered
-		angle += scan_main->angle_increment;
+		if (is_main_scan) {
+			angle += scan_main->angle_increment;
+		}
 	}
 
 	// NOTE: ranges are ordered from angle_max to angle_min
@@ -199,10 +244,10 @@ void LaserPlaneMerger::scansCallback(
 // SOURCE: https://www.geeksforgeeks.org/sorting-vector-of-pairs-in-c-set-1-sort-by-first-and-second/
 // Driver function to sort the vector elements by second element of pairs
 bool sortbysec (
-	const std::pair<geometry_msgs::Point32, double> &a,
-	const std::pair<geometry_msgs::Point32, double> &b
+	const std::tuple<geometry_msgs::Point32, double, bool> &a,
+	const std::tuple<geometry_msgs::Point32, double, bool> &b
 ) {
-    return (a.second < b.second);
+    return (std::get<1>(a) < std::get<1>(b));
 }
 
 std::vector<geometry_msgs::Point32> LaserPlaneMerger::computeGlobalPositions(
