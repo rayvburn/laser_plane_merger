@@ -9,10 +9,10 @@ Sensor model is considered to compare main scan's readings with the closest read
 
 A typical application is to set `main_scan` as a LiDAR scan, whereas the second one as a LaserScan retrieved from a RGBD camera (converted from PCL).
 
+# Run
 Node can be run with:
 
     rosrun laser_plane_merger laser_plane_merger_node scan1:=scan scan2:=rgbd_scan
 
 # Merging algorithm
-
 TBD (plantuml)
