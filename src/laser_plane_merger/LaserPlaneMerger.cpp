@@ -16,6 +16,10 @@ bool sortByAngle (
 	const LaserPlaneMerger::ObstacleScanFrame &b
 );
 
+// #define DEBUG_MATCHING
+// #define DEBUG_COMP_GLOBAL_POS
+// #define DEBUG_ANGLE
+
 LaserPlaneMerger::LaserPlaneMerger():
 	tf_listener_(tf_buffer_),
 	sub_scan_main_ptr_(nullptr),
@@ -52,20 +56,7 @@ void LaserPlaneMerger::scansCallback(
 	const sensor_msgs::LaserScanConstPtr &scan_main,
 	const sensor_msgs::LaserScanConstPtr &scan_aux
 ) {
-	// try to transform to another coordinate system
-//	geometry_msgs::TransformStamped transform;
-//	try {
-//		transform = tf_buffer_.lookupTransform(
-//			scan_aux->header.frame_id,
-//			scan_main->header.frame_id,
-//			ros::Time::now(),
-//			ros::Duration(1.0)
-//		);
-//	} catch (tf2::TransformException &e) {
-//		ROS_WARN("exception: %s", e.what());
-//		return;
-//	}
-
+	// try to find transforms to another coordinate systems
 	geometry_msgs::TransformStamped transform_glob_aux_pose;
 	try {
 		transform_glob_aux_pose = tf_buffer_.lookupTransform(
@@ -158,25 +149,27 @@ void LaserPlaneMerger::scansCallback(
 
 	// stores resultant vector of obstacles included in merged scan (compared to pos_obs_global, it has
 	// "doubled" obstacles erased
-	//std::vector<geometry_msgs::Point32> pos_obs_global_final;
 	std::vector<ObstacleScanFrame*> pos_obs_global_final;
 
 	for (auto it = pos_obs_global.begin(); it != pos_obs_global.end(); it++) {
 		// evaluate whether obstacle in "main scan" is not detected (Inf) or further than the corresponding
 		// obstacle detected in the "auxiliary scan"
 		// NOTE: scans are matched heuristically
-
 		bool is_main_scan = it->is_main;
 
+		#ifdef DEBUG_MATCHING
 		printf("%ld) angle: %4.5f, is_main: %d",
 			it - pos_obs_global.begin(),
 			it->angle,
 			is_main_scan
 		);
+		#endif
 
 		// abort further actions if it's not a main scan
 		if (!is_main_scan) {
+			#ifdef DEBUG_MATCHING
 			printf("\r\n");
+			#endif
 			continue;
 		}
 
@@ -203,12 +196,14 @@ void LaserPlaneMerger::scansCallback(
 			}
 		}
 
+		#ifdef DEBUG_MATCHING
 		printf(" | n-bours - up: %ld, down: %ld",
 			//it - neighbour_main_up,
 			//neighbour_main_down - it
 			neighbour_main_up - pos_obs_global.begin(),
 			neighbour_main_down - pos_obs_global.begin()
 		);
+		#endif
 
 		// check, whether there is an "auxiliary scan" between the current one and the "down" (bottom)
 		// neighbour (we are looking from top to bottom)
@@ -219,94 +214,91 @@ void LaserPlaneMerger::scansCallback(
 		if (distance_to_upper_neighbour == 0) {
 			// 0 is reserved for .begin() `iterator`
 			pos_obs_global_final.push_back(&(*it));
+			#ifdef DEBUG_MATCHING
 			printf("  -  0 dist to upper neighbour!\r\n");
+			#endif
 			continue;
 		}
 		if (distance_to_upper_neighbour >= 2) {
-			// TODO
-			//
 			// previous main scan and the current one are separated with an auxiliary scan -
 			// therefore main scans' data must be compared with auxiliary one's.
 			//
-//			// check, whether the previous data was taken from `main_scan`
-//			if (pos_obs_global_final.back()->is_main) {
-//				// it's from main, so must decide, whether to chose an auxiliary scan data
-//				// or stick with the currently investigated data (related to the main scan)
-//				// NOTE: decision criteria is a distance to the obstacle
-//				pos_obs_global_final.push_back(chooseClosest(&(*it), &(*(it-1))));
-//				printf("\r\n");
-//				continue;
-//			}
-
-			// V2
 			// check whether the previous data was taken from the `main` scan
 			// because the auxiliary scan's angle was closer to the current `scan`,
 			// compared to the upper neighbour's
 			double angle_distance_current = std::fabs(it->angle - (it-1)->angle);
 			double angle_distance_neighbour = std::fabs(neighbour_main_up->angle - (it-1)->angle);
+			#ifdef DEBUG_MATCHING
 			printf(" | UPP angDist - cur: %4.5f, upp n-bour: %4.5f",
 				angle_distance_current,
 				angle_distance_neighbour
 			);
+			#endif
 			if (angle_distance_current <= angle_distance_neighbour) {
 				// select closest from current (main) and previous (auxiliary)
 				pos_obs_global_final.push_back(chooseClosest(&(*it), &(*(it-1))));
-				//printf(" SLCTD!\r\n");
+				#ifdef DEBUG_MATCHING
 				printf(" %ld/%ld!\r\n",
 					(it-1) - pos_obs_global.begin(),
 					it - pos_obs_global.begin()
 				);
+				#endif
 				continue;
 			}
 			// requires check of the bottom neighbourhood
+			#ifdef DEBUG_MATCHING
 			printf(" **REQ BOT!** ");
 			printf("D:%d", distance_to_bottom_neighbour);
+			#endif
 		}
 		if (distance_to_bottom_neighbour >= 2) {
 			// must check, whether the auxiliary scan's angle is closer to the current instance or the next one
 			double angle_distance_current = std::fabs(it->angle - (it+1)->angle);
 			double angle_distance_neighbour = std::fabs(neighbour_main_down->angle - (it+1)->angle);
+			#ifdef DEBUG_MATCHING
 			printf(" | BOT angDist - cur: %4.5f, bot n-bour: %4.5f",
 				angle_distance_current,
 				angle_distance_neighbour
 			);
+			#endif
 			if (angle_distance_current <= angle_distance_neighbour) {
 				// take the current (main) scan as the bottom neighbour is closer to the
 				// auxiliary scan
 				// NOTE: auxiliary scan will be considered in the next iteration (for the next range)
 				pos_obs_global_final.push_back(chooseClosest(&(*it), &(*(it+1))));
-				//printf(" CURR!\r\n");
+				#ifdef DEBUG_MATCHING
 				printf(" %ld/%ld!\r\n",
 					it - pos_obs_global.begin(),
 					(it+1) - pos_obs_global.begin()
 				);
+				#endif
 				continue;
-			} /* else {
-				// currently: it
-				// it + 1 is an auxiliary scan data
-				// it + 2 is a main scan data (neighbour_main_down)
-				pos_obs_global_final.push_back(chooseClosest(&(*neighbour_main_down), &(*(it+1))));
 			}
-			*/
+
 			pos_obs_global_final.push_back(&(*it));
+			#ifdef DEBUG_MATCHING
 			printf(" %ld! NXT\r\n", it - pos_obs_global.begin());
+			#endif
 			continue;
 		}
 
 		if (distance_to_bottom_neighbour == 1 || distance_to_upper_neighbour == 1) {
 			pos_obs_global_final.push_back(&(*it));
-			//printf("  -  1 dist to upper OR bottom neighbour!\r\n");
+			#ifdef DEBUG_MATCHING
 			printf(" / SEL: %ld!\r\n", it - pos_obs_global.begin());
+			#endif
 			continue;
 		}
 	}
 
+	#ifdef DEBUG_MATCHING
 	printf("FINAL: total %ld, main: %ld, aux: %ld  /  diff: %ld\r\n\n\n",
 		pos_obs_global_final.size(),
 		pos_obs_main_global.size(),
 		pos_obs_aux_global.size(),
 		pos_obs_main_global.size() - pos_obs_aux_global.size()
 	);
+	#endif
 
 	// final evaluation
 	sensor_msgs::LaserScan scan_merged;
@@ -349,20 +341,24 @@ std::vector<geometry_msgs::Point32> LaserPlaneMerger::computeGlobalPositions(
 	for (const auto& range: scan.ranges) {
 		// find obstacle position (auxiliary scan) in global coordinate system
 		vector.push_back(findGlobalPosition(pose_ref, range, angle));
-//		printf("[global position] before - position_ref: %2.5f, %2.5f, %2.5f, orientation: %2.5f, %2.5f, %2.5f, %2.5f, range: %3.6f, angle: %3.6f\r\n",
-//			transform_glob_aux_pose.transform.translation.x,
-//			transform_glob_aux_pose.transform.translation.y,
-//			transform_glob_aux_pose.transform.translation.z,
-//			transform_glob_aux_pose.transform.rotation.x,
-//			transform_glob_aux_pose.transform.rotation.y,
-//			transform_glob_aux_pose.transform.rotation.z,
-//			transform_glob_aux_pose.transform.rotation.w,
-//			range,
-//			angle
-//		);
+		#ifdef DEBUG_COMP_GLOBAL_POS
+		printf("[global position] before - position_ref: %2.5f, %2.5f, %2.5f, orientation: %2.5f, %2.5f, %2.5f, %2.5f, range: %3.6f, angle: %3.6f\r\n",
+			transform_glob_aux_pose.transform.translation.x,
+			transform_glob_aux_pose.transform.translation.y,
+			transform_glob_aux_pose.transform.translation.z,
+			transform_glob_aux_pose.transform.rotation.x,
+			transform_glob_aux_pose.transform.rotation.y,
+			transform_glob_aux_pose.transform.rotation.z,
+			transform_glob_aux_pose.transform.rotation.w,
+			range,
+			angle
+		);
+		#endif
 		angle += scan.angle_increment;
 	}
-//	printf("\r\n");
+	#ifdef DEBUG_COMP_GLOBAL_POS
+	printf("\r\n");
+	#endif
 	return vector;
 }
 
@@ -384,11 +380,6 @@ geometry_msgs::Point32 LaserPlaneMerger::findGlobalPosition(
 			pose_ref.transform.translation.z)
 	);
 
-	auto copy_tf = pose_ref;
-	copy_tf.child_frame_id = "testtt";
-	tf_broadcaster_.sendTransform(copy_tf);
-
-	// V1
 	tf::Quaternion quat_range;
 	quat_range.setRPY(0.0, 0.0, angle);
 	tf::Transform tf_range_rot(
@@ -405,84 +396,15 @@ geometry_msgs::Point32 LaserPlaneMerger::findGlobalPosition(
 
 	tf::Transform tf = tf_ref * tf_range_rot * tf_range;
 
-//	// V2
-//	tf::Quaternion quat_tr;
-//	quat_tr.setRPY(0.0, 0.0, 0.0);
-//	tf::Transform tf_range(
-//		tf::Quaternion(quat_tr),
-//		tf::Vector3(range, 0.0, 0.0)
-//	);
-//
-//	tf::Transform tf = tf_ref * tf_range;
-
 	geometry_msgs::Point32 pos_global;
 	pos_global.x = tf.getOrigin().getX();
 	pos_global.y = tf.getOrigin().getY();
 	pos_global.z = tf.getOrigin().getZ();
-	return pos_global;
-
-	/*
-	// tf2::doTransform(person.pose, person.pose, transform);
-
-	KDL::Rotation orient_range;
-	orient_range = orient_range.RPY(0.0, 0.0, angle);
-
-	KDL::Rotation orient_pose;
-	orient_pose = orient_pose.Quaternion(
-		pose_ref.transform.rotation.x,
-		pose_ref.transform.rotation.y,
-		pose_ref.transform.rotation.z,
-		pose_ref.transform.rotation.w
-	);
-
-	// V1
-	// KDL::Rotation orient_result(orient_pose * orient_range);
-	// V2
-	double roll1, roll2;
-	double pitch1, pitch2;
-	double yaw1, yaw2;
-	orient_range.GetRPY(roll1, pitch1, yaw1);
-//	printf("orient_range: roll = %3.5f, pitch = %3.5f, yaw = %3.5f\r\n",
-//		roll1,
-//		pitch1,
-//		yaw1
-//	);
-	orient_pose.GetRPY(roll2, pitch2, yaw2);
-//	printf("orient_pose: roll = %3.5f, pitch = %3.5f, yaw = %3.5f\r\n",
-//		roll2,
-//		pitch2,
-//		yaw2
-//	);
-	KDL::Rotation orient_result;
-	orient_result = orient_result.RPY(roll1 + roll2, pitch1 + pitch2, yaw1 + yaw2);
-//	printf("\r\n");
-
-	// ranges are expressed as lengths relative to X-axis direction
-	KDL::Vector vector_range(range, 0.0, 0.0);
-	vector_range = orient_result * vector_range;
-
-	KDL::Vector vector_global;
-	vector_global = KDL::Vector(
-		pose_ref.transform.translation.x,
-		pose_ref.transform.translation.y,
-		pose_ref.transform.translation.z)
-		+ vector_range;
-
-	geometry_msgs::Point32 pos_global;
-	pos_global.x = vector_global.x();
-	pos_global.y = vector_global.y();
-	pos_global.z = vector_global.z();
 
 	return pos_global;
-	*/
 }
 
-double LaserPlaneMerger::findScanRange(
-	const geometry_msgs::TransformStamped &pose_ref,
-	geometry_msgs::Point32 &pos_obs,
-	const double &angle) {
 
-}
 
 unsigned int LaserPlaneMerger::findAngleIndex(
 	const double &angle,
@@ -499,6 +421,10 @@ void LaserPlaneMerger::publishGlobalPositionsVisualization(
 	const std::string &ns,
 	const int &id
 ) {
+	if (pub_marker_.getNumSubscribers() == 0) {
+		return;
+	}
+
 	visualization_msgs::Marker marker;
 	marker.pose.orientation.x = 0.0f;
 	marker.pose.orientation.y = 0.0f;
@@ -561,7 +487,8 @@ double LaserPlaneMerger::computeAngle(
 	double angle_relative = angle - angle_ref;
 	// normalize
 	angle_relative = std::atan2(sin(angle_relative), cos(angle_relative));
-	/*
+
+	#ifdef DEBUG_ANGLE
 	printf("[computeAngle] pos_ref: %2.5f, %2.5f, %2.5f | pos: %2.5f, %2.5f, %2.5f | diff: %2.5f, %2.5f, %2.5f | angle: %3.6f, ref: %3.6f, relative: %3.6f\r\n",
 		position.x,
 		position.y,
@@ -576,7 +503,8 @@ double LaserPlaneMerger::computeAngle(
 		angle_ref,
 		angle_relative
 	);
-	*/
+	#endif
+
 	return angle_relative;
 }
 
