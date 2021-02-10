@@ -6,13 +6,13 @@ add_definitions(-std=c++11)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   tf
+  tf2_ros
   sensor_msgs
   message_filters
-  kdl_conversions
 )
 
 catkin_package(
-  CATKIN_DEPENDS roscpp tf sensor_msgs message_filters kdl_conversions
+  CATKIN_DEPENDS roscpp tf tf2_ros sensor_msgs message_filters
 )
 
 include_directories(
