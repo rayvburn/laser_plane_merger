@@ -11,9 +11,9 @@
 #include <tf/tf.h>
 
 // NOTE: free function used for sorting
-bool sortbysec (
-	const std::tuple<geometry_msgs::Point32, double, bool> &a,
-	const std::tuple<geometry_msgs::Point32, double, bool> &b
+bool sortByAngle (
+	const LaserPlaneMerger::ObstacleScanFrame &a,
+	const LaserPlaneMerger::ObstacleScanFrame &b
 );
 
 LaserPlaneMerger::LaserPlaneMerger():
@@ -150,32 +150,45 @@ void LaserPlaneMerger::scansCallback(
 	// - position
 	// - double (angle of vector connecting `scan_pos` (MAIN!) with the `pos`)
 	// - bool (flag indicating that the obstacle was detected in main scan)
-	std::vector<std::tuple<geometry_msgs::Point32, double, bool>> pos_obs_global;
+	std::vector<ObstacleScanFrame> pos_obs_global;
 	for (auto& pos : pos_obs_main_global) {
-		pos_obs_global.push_back(std::make_tuple(pos, computeAngle(transform_glob_main_pose, pos), true));
-
+		pos_obs_global.push_back(
+			ObstacleScanFrame(
+				pos,
+				computeAngle(transform_glob_main_pose, pos),
+				computeEuclideanDistance(transform_glob_main_pose, pos),
+				true
+			)
+		);
 	}
 	for (auto& pos : pos_obs_aux_global) {
-		pos_obs_global.push_back(std::make_tuple(pos, computeAngle(transform_glob_main_pose, pos), false));
+		pos_obs_global.push_back(
+			ObstacleScanFrame(
+				pos,
+				computeAngle(transform_glob_main_pose, pos),
+				computeEuclideanDistance(transform_glob_main_pose, pos),
+				false
+			)
+		);
 	}
 	// sort by vector direction angles
-	sort(pos_obs_global.begin(), pos_obs_global.end(), sortbysec);
+	sort(pos_obs_global.begin(), pos_obs_global.end(), sortByAngle);
 
 	// stores resultant vector of obstacles included in merged scan (compared to pos_obs_global, it has
 	// "doubled" obstacles erased
-	std::vector<geometry_msgs::Point32> pos_obs_global_final;
+	//std::vector<geometry_msgs::Point32> pos_obs_global_final;
+	std::vector<ObstacleScanFrame*> pos_obs_global_final;
 
-	float angle = scan_main->angle_min;
 	for (auto it = pos_obs_global.begin(); it != pos_obs_global.end(); it++) {
 		// evaluate whether obstacle in "main scan" is not detected (Inf) or further than the corresponding
 		// obstacle detected in the "auxiliary scan"
 		// NOTE: scans are matched heuristically
 
-		bool is_main_scan = std::get<2>(*it);
+		bool is_main_scan = it->is_main;
 
 		printf("%ld) angle: %4.5f, is_main: %d",
 			it - pos_obs_global.begin(),
-			angle,
+			it->angle,
 			is_main_scan
 		);
 
@@ -193,7 +206,7 @@ void LaserPlaneMerger::scansCallback(
 		if (it != pos_obs_global.begin()) {
 			while (--neighbour_main_up != pos_obs_global.begin()) {
 				// evaluate whether it's obstacle detected in "main scan"
-				if (std::get<2>(*neighbour_main_up) == true) {
+				if (neighbour_main_up->is_main == true) {
 					break;
 				}
 			}
@@ -202,13 +215,13 @@ void LaserPlaneMerger::scansCallback(
 		if (it != pos_obs_global.end()) {
 			while (++neighbour_main_down != pos_obs_global.end()) {
 				// evaluate whether it's obstacle detected in "main scan"
-				if (std::get<2>(*neighbour_main_down) == true) {
+				if (neighbour_main_down->is_main == true) {
 					break;
 				}
 			}
 		}
 
-		printf(" | neighbours - up: %ld, down: %ld",
+		printf(" | n-bours - up: %ld, down: %ld",
 			//it - neighbour_main_up,
 			//neighbour_main_down - it
 			neighbour_main_up - pos_obs_global.begin(),
@@ -218,24 +231,99 @@ void LaserPlaneMerger::scansCallback(
 		// check, whether there is an "auxiliary scan" between the current one and the "down" (bottom)
 		// neighbour (we are looking from top to bottom)
 		int distance_to_bottom_neighbour = neighbour_main_down - it;
+		int distance_to_upper_neighbour = it - neighbour_main_up;
+
 		// i.e. the bottom "main" neighbour is separated from the current "scan" with an "auxiliary" one
-		if (distance_to_bottom_neighbour == 1) {
-			printf
+		if (distance_to_bottom_neighbour == 0) {
+			// 0 is reserved for .begin() `iterator`
+			pos_obs_global_final.push_back(&(*it));
+			printf(" 0 dist to bottom neighbour!\r\n");
+			continue;
+		}
+		if (distance_to_upper_neighbour == 2) {
+			// TODO
+			//
+			// previous main scan and the current one are separated with an auxiliary scan -
+			// therefore main scans' data must be compared with auxiliary one's.
+			//
+//			// check, whether the previous data was taken from `main_scan`
+//			if (pos_obs_global_final.back()->is_main) {
+//				// it's from main, so must decide, whether to chose an auxiliary scan data
+//				// or stick with the currently investigated data (related to the main scan)
+//				// NOTE: decision criteria is a distance to the obstacle
+//				pos_obs_global_final.push_back(chooseClosest(&(*it), &(*(it-1))));
+//				printf("\r\n");
+//				continue;
+//			}
+
+			// V2
+			// check whether the previous data was taken from the `main` scan
+			// because the auxiliary scan's angle was closer to the current `scan`,
+			// compared to the upper neighbour's
+			double angle_distance_current = std::fabs(it->angle - (it-1)->angle);
+			double angle_distance_neighbour = std::fabs(neighbour_main_up->angle - (it-1)->angle);
+			printf(" | UPP angDist - cur: %4.5f, upp n-bour: %4.5f",
+				angle_distance_current,
+				angle_distance_neighbour
+			);
+			if (angle_distance_current <= angle_distance_neighbour) {
+				// select closest from current (main) and previous (auxiliary)
+				pos_obs_global_final.push_back(chooseClosest(&(*it), &(*(it-1))));
+				//printf(" SLCTD!\r\n");
+				printf(" %ld/%ld!\r\n",
+					(it-1) - pos_obs_global.begin(),
+					it - pos_obs_global.begin()
+				);
+				continue;
+			}
+			// requires check of the bottom neighbourhood
+			printf(" **REQ BOT!** ");
+			printf("D:%d", distance_to_bottom_neighbour);
+		}
+		if (distance_to_bottom_neighbour == 2) {
+			// must check, whether the auxiliary scan's angle is closer to the current instance or the next one
+			double angle_distance_current = std::fabs(it->angle - (it+1)->angle);
+			double angle_distance_neighbour = std::fabs(neighbour_main_down->angle - (it+1)->angle);
+			printf(" | BOT angDist - cur: %4.5f, bot n-bour: %4.5f",
+				angle_distance_current,
+				angle_distance_neighbour
+			);
+			if (angle_distance_current <= angle_distance_neighbour) {
+				// take the current (main) scan as the bottom neighbour is closer to the
+				// auxiliary scan
+				// NOTE: auxiliary scan will be considered in the next iteration (for the next range)
+				pos_obs_global_final.push_back(chooseClosest(&(*it), &(*(it+1))));
+				//printf(" CURR!\r\n");
+				printf(" %ld/%ld!\r\n",
+					it - pos_obs_global.begin(),
+					(it+1) - pos_obs_global.begin()
+				);
+				continue;
+			} /* else {
+				// currently: it
+				// it + 1 is an auxiliary scan data
+				// it + 2 is a main scan data (neighbour_main_down)
+				pos_obs_global_final.push_back(chooseClosest(&(*neighbour_main_down), &(*(it+1))));
+			}
+			*/
+			pos_obs_global_final.push_back(&(*it));
+			printf(" %ld! NXT", it - pos_obs_global.begin());
+		}
+		if (distance_to_bottom_neighbour >= 3) {
+			printf("\t\t*************STRANGE DIST TO BOTTOM NEIGHBOUR**************** %d",
+				distance_to_bottom_neighbour
+			);
 		}
 
-//		if (std::isinf(pos.x) || std::isinf(pos.y) || std::isinf(pos.z)) {
-//			// scan value in `main` scan seems to be OK
-//			continue;
-//		}
-		// look for a closest aux scan range
 
 		printf("\r\n");
-
-		// this is incremented only if the main scan was considered
-		if (is_main_scan) {
-			angle += scan_main->angle_increment;
-		}
 	}
+
+	// final evaluation
+	// this is incremented only if the main scan was considered
+//	if (is_main_scan) {
+//		angle += scan_main->angle_increment;
+//	}
 
 	// NOTE: ranges are ordered from angle_max to angle_min
 }
@@ -243,11 +331,11 @@ void LaserPlaneMerger::scansCallback(
 // NOTE: free function
 // SOURCE: https://www.geeksforgeeks.org/sorting-vector-of-pairs-in-c-set-1-sort-by-first-and-second/
 // Driver function to sort the vector elements by second element of pairs
-bool sortbysec (
-	const std::tuple<geometry_msgs::Point32, double, bool> &a,
-	const std::tuple<geometry_msgs::Point32, double, bool> &b
+bool sortByAngle (
+	const LaserPlaneMerger::ObstacleScanFrame &a,
+	const LaserPlaneMerger::ObstacleScanFrame &b
 ) {
-    return (std::get<1>(a) < std::get<1>(b));
+    return (a.angle < b.angle);
 }
 
 std::vector<geometry_msgs::Point32> LaserPlaneMerger::computeGlobalPositions(
@@ -448,17 +536,20 @@ void LaserPlaneMerger::publishGlobalPositionsVisualization(
 	pub_marker_.publish(marker);
 }
 
-double LaserPlaneMerger::computeAngle(
-	const geometry_msgs::TransformStamped &pose_ref,
-	const geometry_msgs::Point32 &position
+double LaserPlaneMerger::computeEuclideanDistance(
+		const geometry_msgs::TransformStamped &pose_ref,
+		const geometry_msgs::Point32 &position
 ) {
-	// Euclidean distance
-	/*
 	return std::sqrt(std::pow(position.x - pose_ref.transform.translation.x, 2)
 		+ std::pow(position.y - pose_ref.transform.translation.y, 2)
 		+ std::pow(position.z - pose_ref.transform.translation.z, 2)
 	);
-	*/
+}
+
+double LaserPlaneMerger::computeAngle(
+	const geometry_msgs::TransformStamped &pose_ref,
+	const geometry_msgs::Point32 &position
+) {
 	tf::Vector3 v(
 		position.x - pose_ref.transform.translation.x,
 		position.y - pose_ref.transform.translation.y,
@@ -482,4 +573,12 @@ double LaserPlaneMerger::computeAngle(
 	*/
 
 	return angle;
+}
+
+LaserPlaneMerger::ObstacleScanFrame* LaserPlaneMerger::chooseClosest(
+	ObstacleScanFrame* main,
+	ObstacleScanFrame* aux
+) {
+	// is inf?
+	return (aux->distance < main->distance) ? aux : main;
 }

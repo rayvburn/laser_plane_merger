@@ -28,7 +28,6 @@ public:
 	LaserPlaneMerger();
 	virtual ~LaserPlaneMerger() = default;
 
-private:
 	struct ObstacleScanFrame {
 		/// position of the obstacle point in global coordinate system
 		geometry_msgs::Point32 pos;
@@ -38,8 +37,21 @@ private:
 		double distance;
 		/// indicates that the obstacle was detected by "main_scan"
 		bool is_main;
+		/// constructor
+		ObstacleScanFrame(
+			const geometry_msgs::Point32 &pos,
+			const double &angle,
+			const double &distance,
+			bool is_main):
+			pos(pos),
+			angle(angle),
+			distance(distance),
+			is_main(is_main)
+		{
+		}
 	};
 
+private:
 	void scansCallback(
 		const sensor_msgs::LaserScanConstPtr &scan_main,
 		const sensor_msgs::LaserScanConstPtr &scan_aux
@@ -69,10 +81,15 @@ private:
 		const std::string &ns,
 		const int &id
 	);
+	double computeEuclideanDistance(
+			const geometry_msgs::TransformStamped &pose_ref,
+			const geometry_msgs::Point32 &position
+	);
 	double computeAngle(
 		const geometry_msgs::TransformStamped &pose_ref,
 		const geometry_msgs::Point32 &position
 	);
+	ObstacleScanFrame* chooseClosest(ObstacleScanFrame* main, ObstacleScanFrame* aux);
 
 	ros::NodeHandle nh_;
 
