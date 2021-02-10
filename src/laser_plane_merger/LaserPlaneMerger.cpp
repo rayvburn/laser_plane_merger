@@ -6,9 +6,7 @@
  */
 
 #include <laser_plane_merger/LaserPlaneMerger.hpp>
-#include <kdl_conversions/kdl_msg.h>
 #include <algorithm>
-#include <tf/tf.h>
 
 // NOTE: free function used for sorting
 bool sortByAngle (
@@ -16,6 +14,7 @@ bool sortByAngle (
 	const LaserPlaneMerger::ObstacleScanFrame &b
 );
 
+// NOTE: enabling debugging info will likely cause some lags
 // #define DEBUG_MATCHING
 // #define DEBUG_COMP_GLOBAL_POS
 // #define DEBUG_ANGLE
@@ -24,13 +23,15 @@ LaserPlaneMerger::LaserPlaneMerger():
 	tf_listener_(tf_buffer_),
 	sub_scan_main_ptr_(nullptr),
 	sub_scan_aux_ptr_(nullptr),
-	sync_ptr_(nullptr) {
+	sync_ptr_(nullptr),
+	global_frame_name_("") {
 	std::string scan_main_topic_name;
 	std::string scan_aux_topic_name;
 	std::string scan_merged_topic_name;
 	nh_.param<std::string>("scan_main_topic_name", scan_main_topic_name, "/scan1");
 	nh_.param<std::string>("scan_aux_topic_name", scan_aux_topic_name, "/scan2");
 	nh_.param<std::string>("scan_merged_topic_name", scan_merged_topic_name, "/scan_merged");
+	nh_.param<std::string>("global_frame_name", global_frame_name_, "map");
 
 	sub_scan_main_ptr_ = new message_filters::Subscriber<sensor_msgs::LaserScan>(nh_, scan_main_topic_name, 10);
 	sub_scan_aux_ptr_ = new message_filters::Subscriber<sensor_msgs::LaserScan>(nh_, scan_aux_topic_name, 10);
@@ -49,7 +50,7 @@ LaserPlaneMerger::LaserPlaneMerger():
 	);
 
 	pub_scan_ = nh_.advertise<sensor_msgs::LaserScan>(scan_merged_topic_name, 5);
-	pub_marker_ = nh_.advertise<visualization_msgs::Marker>("/laser_plane_merger_marker", 5);
+	pub_marker_ = nh_.advertise<visualization_msgs::Marker>("/laser_plane_merger/marker", 1);
 }
 
 void LaserPlaneMerger::scansCallback(
@@ -60,7 +61,7 @@ void LaserPlaneMerger::scansCallback(
 	geometry_msgs::TransformStamped transform_glob_aux_pose;
 	try {
 		transform_glob_aux_pose = tf_buffer_.lookupTransform(
-			"map",
+			global_frame_name_,
 			scan_aux->header.frame_id,
 			ros::Time::now(),
 			ros::Duration(1.0)
@@ -73,7 +74,7 @@ void LaserPlaneMerger::scansCallback(
 	geometry_msgs::TransformStamped transform_glob_main_pose;
 	try {
 		transform_glob_main_pose = tf_buffer_.lookupTransform(
-			"map",
+			global_frame_name_,
 			scan_main->header.frame_id,
 			ros::Time::now(),
 			ros::Duration(1.0)
@@ -119,10 +120,7 @@ void LaserPlaneMerger::scansCallback(
 	publishGlobalPositionsVisualization(pos_obs_main_global, "scan_main", 0);
 	publishGlobalPositionsVisualization(pos_obs_aux_global, "scan_aux", 1);
 
-	// vector of tuples, tuple consists of:
-	// - position
-	// - double (angle of vector connecting `scan_pos` (MAIN!) with the `pos`)
-	// - bool (flag indicating that the obstacle was detected in main scan)
+	// vector of structs
 	std::vector<ObstacleScanFrame> pos_obs_global;
 	for (auto& pos : pos_obs_main_global) {
 		pos_obs_global.push_back(
@@ -435,7 +433,7 @@ void LaserPlaneMerger::publishGlobalPositionsVisualization(
 	marker.scale.y = 0.01;
 	marker.scale.z = 0.01;
 
-	marker.header.frame_id = "map";
+	marker.header.frame_id = global_frame_name_;
 	marker.header.stamp = ros::Time::now();
 
 	marker.ns = ns;
@@ -483,7 +481,19 @@ double LaserPlaneMerger::computeAngle(
 		position.z - pose_ref.transform.translation.z
 	);
 	double angle = std::atan2(v.getY(), v.getX());
-	double angle_ref = std::atan2(pose_ref.transform.translation.y, pose_ref.transform.translation.x);
+
+	// reference yaw (compute from transform stamped)
+	tf::Quaternion quat(
+		pose_ref.transform.rotation.x,
+		pose_ref.transform.rotation.y,
+		pose_ref.transform.rotation.z,
+		pose_ref.transform.rotation.w
+	);
+	tf::Matrix3x3 m(quat);
+	double roll, pitch, yaw;
+	m.getRPY(roll, pitch, yaw);
+	double angle_ref = yaw;
+
 	double angle_relative = angle - angle_ref;
 	// normalize
 	angle_relative = std::atan2(sin(angle_relative), cos(angle_relative));

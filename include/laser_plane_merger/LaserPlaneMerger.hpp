@@ -19,7 +19,7 @@
 #include <geometry_msgs/Point32.h>
 #include <geometry_msgs/Pose.h>
 #include <visualization_msgs/Marker.h>
-#include <tf2_ros/transform_broadcaster.h>
+#include <tf/tf.h>
 
 #include <mutex>
 
@@ -83,8 +83,8 @@ private:
 	);
 
 	double computeEuclideanDistance(
-			const geometry_msgs::TransformStamped &pose_ref,
-			const geometry_msgs::Point32 &position
+		const geometry_msgs::TransformStamped &pose_ref,
+		const geometry_msgs::Point32 &position
 	);
 
 	double computeAngle(
@@ -106,6 +106,8 @@ private:
 
 	ros::Publisher pub_scan_;
 	ros::Publisher pub_marker_;
+
+	std::string global_frame_name_;
 };
 
 #endif /* INCLUDE_LASER_PLANE_MERGER_LASERPLANEMERGER_HPP_ */
