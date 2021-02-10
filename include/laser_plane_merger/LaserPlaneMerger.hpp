@@ -33,6 +33,10 @@ private:
 		const sensor_msgs::LaserScanConstPtr &scan_main,
 		const sensor_msgs::LaserScanConstPtr &scan_aux
 	);
+	std::vector<geometry_msgs::Point32> computeGlobalPositions(
+		const geometry_msgs::TransformStamped &pose_ref,
+		const sensor_msgs::LaserScan &scan
+	);
 	geometry_msgs::Point32 findGlobalPosition(
 		const geometry_msgs::TransformStamped &pose_ref,
 		const double &range,
@@ -48,6 +52,15 @@ private:
 		const double &angle_min,
 		const double &angle_max,
 		const double &angle_inc
+	);
+	void publishGlobalPositionsVisualization(
+		const std::vector<geometry_msgs::Point32> &positions,
+		const std::string &ns,
+		const int &id
+	);
+	double computeAngle(
+		const geometry_msgs::TransformStamped &pose_ref,
+		const geometry_msgs::Point32 &position
 	);
 
 	ros::NodeHandle nh_;
