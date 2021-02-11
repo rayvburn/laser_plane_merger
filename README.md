@@ -28,6 +28,8 @@ Node can be run with:
 * `/tf` ([tf/tfMessage](http://docs.ros.org/en/kinetic/api/tf/html/msg/tfMessage.html))
 * `/tf_static` ([tf2_msgs/TFMessage](http://docs.ros.org/en/kinetic/api/tf2_msgs/html/msg/TFMessage.html))
 
+The node uses [`message_filters::Subscriber`](http://docs.ros.org/en/kinetic/api/message_filters/html/c++/classmessage__filters_1_1Subscriber.html)s with [`ApproximateTime`](http://wiki.ros.org/message_filters/ApproximateTime) synchronization policy so the resultant scan is computed with slower scan's (main or auxiliary) frequency.
+
 ## Published topics
 * `/scan_merged` ([sensor_msgs/LaserScan](http://docs.ros.org/en/kinetic/api/sensor_msgs/html/msg/LaserScan.html))
 * `/laser_plane_merger/marker` ([visualization_msgs/Marker](http://docs.ros.org/en/kinetic/api/visualization_msgs/html/msg/Marker.html))
