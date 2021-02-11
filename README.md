@@ -22,5 +22,23 @@ Node can be run with:
 
     rosrun laser_plane_merger laser_plane_merger_node scan1:=scan scan2:=rgbd_scan
 
+## Subscribed topics
+* `/scan1` ([sensor_msgs/LaserScan](http://docs.ros.org/en/kinetic/api/sensor_msgs/html/msg/LaserScan.html))
+* `/scan2` ([sensor_msgs/LaserScan](http://docs.ros.org/en/kinetic/api/sensor_msgs/html/msg/LaserScan.html))
+* `/tf` ([tf/tfMessage](http://docs.ros.org/en/kinetic/api/tf/html/msg/tfMessage.html))
+* `/tf_static` ([tf2_msgs/TFMessage](http://docs.ros.org/en/kinetic/api/tf2_msgs/html/msg/TFMessage.html))
+
+## Published topics
+* `/scan_merged` ([sensor_msgs/LaserScan](http://docs.ros.org/en/kinetic/api/sensor_msgs/html/msg/LaserScan.html))
+* `/laser_plane_merger/marker` ([visualization_msgs/Marker](http://docs.ros.org/en/kinetic/api/visualization_msgs/html/msg/Marker.html))
+
+## Parameters
+* ~*scan_main_topic_name* (string, default: "/scan1")
+* ~*scan_aux_topic_name* (string, default: "/scan2")
+* ~*scan_merged_topic_name* (string, default: "/scan_merged")
+* ~*global_frame_name* (string, default: "map")
+
+Parameters default values can easily be remapped as noted in [Run](https://github.com/rayvburn/laser_plane_merger/blob/main/README.md#run) section or with a `launch` file.
+
 # Merging algorithm
 TBD (plantuml)
