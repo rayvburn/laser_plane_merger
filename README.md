@@ -43,8 +43,10 @@ The node uses [`message_filters::Subscriber`](http://docs.ros.org/en/kinetic/api
 Parameters default values can easily be remapped as noted in [Run](https://github.com/rayvburn/laser_plane_merger/blob/main/README.md#run) section or with a `launch` file.
 
 # Merging algorithm
-Scan with a higher resolution must be selected as a `main` one if one wants to merge 2 different scans. 
+Scan with a higher resolution must be selected as a `main` one if one wants to merge 2 different scans.
 
 It comes from the fact that the algorithm tries to compare obstacle elements found in main scan to elements found in auxiliary scan (if scanning ray goes in the same direction from reference position) and selects closest obstacle element from both scans.
+
+What's more, the resultant `LaserScan` inherits all features (angle range, angle increment) from the `main` scan.
 
 ![algorithm explained](https://plantuml.gitlab-static.net/png/U9pjLijkt30ClFih25-wCR0_q4ERKx-WjoPOq39j2vMb1IcdJR--fEnzPVj2s-IKqnhMS3Wpr4g-bOoSvobKrQQvWUts7THjoYE8moY0pFw1khhwqSi5xTAqdpD1Pbth4qy2FQS9xgAXzHad4iW9Xf1Q3CiB9VoxkikUwz8-YSy-gRJKGshLaWkaH1HeefYLECsn0n_XvE9CmR-mB7g4CepaXp5RRHu9c6GE6MCkE6L1vn9tFWvcoH0JAfCjlf756tpyK5ULxw4-D1UjU_0oO_3VqAHf4NycjlSoj-BOjzIzhuqlLc1QFcMUwHxg_Tm6B-Enu2UMdbglZONDYDdIgG2X6q-bQw5IW6D23K-qeSip4pYjzvBDOkhV6cHxu6-QGuUckP1onhTLLEUPt0ehcu6f9wRew2WHDbV1tLYvRHJTbV74VQmuakk2Kls2-_SaVS112NpilCFYDO-OhmrzGO6EihgXicLiuhkTIT_jYlYweY2q3gr7VRv_3VoP0rUElgfUKtxEbDS3CN66zl69Tuo37MeR56UpYCED7dX_Zbse9ymwEfo_-k2H7vVpTKNVHRLw7YJgWUt6bCHakg2_h4BlufMnJOkYbZIHyqIBlfTjk9X44PhQS76FKBbSpb9QH9IikikDi4VFOjh_2yygYVMY7ipM0L1kvwV6HEsM419hptqgizEYizGKeOLDi_xL9k91ap10qnJHBzEfsDAFdggwrHrcdq3V0GDpAXq0)
